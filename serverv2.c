@@ -10,29 +10,37 @@
 #include <pthread.h>
 #define INTERVAL 1
 
-int clientfds;
 char buffer[1025];
-int fds[2];
+int fdsForkToMain[2];
+int fdsMainToFork[2];
+int clientfd;
 
-void closeAll()
-{
-    close(fds[0]);
-    close(fds[1]);
-}
-
-void *writeToClient()
+void *passData()
 {
     while (1)
     {
-        for (int i = 0; i < 100; i++)
+        if (read(fdsForkToMain[0], &buffer, sizeof(buffer)) > 0)
         {
-            // if (clientfds[i] > 0)
-            // {
-            //     // printf("Send to %d: \n", clientfds[i]);
-            //     fgets(buffer, sizeof(buffer), stdin);
-            //     write(clientfds[i], buffer, sizeof(buffer));
-            // }
+            printf("Server Main got: %s", buffer);
+            write(fdsMainToFork[1], buffer, sizeof(buffer));
         }
+        sleep(INTERVAL);
+    }
+    return NULL;
+}
+
+void *forkWriteDataToClient()
+{
+
+    while (1)
+    {
+        if (read(fdsMainToFork[0], &buffer, sizeof(buffer)) > 0)
+        {
+            printf("Client %d's Server Fork got: %s", clientfd, buffer);
+            printf("Send data to client: %d\n", clientfd);
+            write(clientfd, buffer, sizeof(buffer));
+        }
+        sleep(INTERVAL);
     }
     return NULL;
 }
@@ -41,9 +49,10 @@ int main()
 {
     int sockfd;
 
-    pipe(fds);
+    pipe(fdsForkToMain);
+    pipe(fdsMainToFork);
 
-    memset(&clientfds, 0, sizeof(clientfds));
+    // memset(&clientfdsForkToMain, 0, sizeof(clientfdsForkToMain));
 
     // create new socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -73,9 +82,9 @@ int main()
         exit(0);
     }
 
-    // pthread_t tid;
+    pthread_t tid;
 
-    // pthread_create(&tid, NULL, writeToClient, NULL);
+    pthread_create(&tid, NULL, passData, NULL);
 
     listen(sockfd, 10);
 
@@ -89,10 +98,11 @@ int main()
         printf("Waiting for connection\n");
         select(maxfd + 1, &set, NULL, NULL, NULL);
 
-        int clientfd = accept(sockfd, (struct sockaddr *)NULL, NULL);
+        clientfd = accept(sockfd, (struct sockaddr *)NULL, NULL);
 
         if (fork() == 0)
         {
+
             fd_set clientSet;
             FD_ZERO(&clientSet);
 
@@ -105,14 +115,8 @@ int main()
 
             FD_SET(clientfd, &clientSet);
 
-            int address = 0;
-
-            printf("Send Address to client\n");
-
-            write(clientfd, &address, sizeof(address));
-
-            dup2(fds[1], 1);
-            closeAll();
+            pthread_t childTid;
+            pthread_create(&childTid, NULL, forkWriteDataToClient, NULL);
 
             while (1)
             {
@@ -120,9 +124,10 @@ int main()
 
                 if (read(clientfd, buffer, sizeof(buffer)) > 0)
                 {
-                    printf("%s", buffer);
+                    // printf("%s", buffer);
+                    write(fdsForkToMain[1], buffer, sizeof(buffer));
                 }
-                // sleep(INTERVAL);
+                sleep(INTERVAL);
             }
 
             exit(0);
@@ -130,15 +135,6 @@ int main()
         }
         else
         {
-            dup2(fds[0], 0);
-            closeAll();
-            while (1)
-            {
-                read(0, &buffer, sizeof(buffer));
-                printf("Server Main: %s", buffer);
-                // sleep(INTERVAL);
-            }
-
             // parent
         }
     }

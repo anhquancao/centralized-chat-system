@@ -12,7 +12,6 @@
 
 int sockfd;
 char buffer[1025];
-int address = -1;
 
 void *writeToServer()
 {
@@ -21,7 +20,6 @@ void *writeToServer()
 
         if (sockfd > 0)
         {
-            // printf("Send to server: \n");
             fgets(buffer, sizeof(buffer), stdin);
             write(sockfd, buffer, sizeof(buffer));
         }
@@ -68,15 +66,8 @@ int main()
     {
         if (read(sockfd, buffer, sizeof(buffer)) > 0)
         {
-            if (address == -1)
-            {
-                address = atoi(buffer);
-                printf("Got address: %d\n", address);
-            }
-            else
-            {
-                printf("%s", buffer);
-            }
+
+            printf("%s", buffer);
         }
         // sleep(INTERVAL);
     }
