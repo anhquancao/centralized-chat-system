@@ -9,12 +9,20 @@
 #include <sys/select.h>
 #include <pthread.h>
 #define INTERVAL 1
+#define NUM_CLIENTS 1
 
 char buffer[1025];
 int fdsForkToMain[2];
-int fdsMainToFork[2];
+int fdsMainToFork[2][4];
+// int fdsMainToForkFree[4] = {0};
 int clientfd;
+int i;
+int clientId;
 
+/**
+ * Run by server main to transfer data to servers fork
+ * 
+ */
 void *passData()
 {
     while (1)
@@ -22,24 +30,37 @@ void *passData()
         if (read(fdsForkToMain[0], &buffer, sizeof(buffer)) > 0)
         {
             printf("Server Main got: %s", buffer);
-            write(fdsMainToFork[1], buffer, sizeof(buffer));
+            for (i = 0; i < NUM_CLIENTS; i++)
+            {
+                write(fdsMainToFork[i][1], buffer, sizeof(buffer));
+            }
         }
         sleep(INTERVAL);
     }
     return NULL;
 }
 
+/**
+ * Run by server fork to write data to client
+ * 
+ */
 void *forkWriteDataToClient()
 {
 
     while (1)
     {
-        if (read(fdsMainToFork[0], &buffer, sizeof(buffer)) > 0)
+
+        for (i = 0; i < NUM_CLIENTS; i++)
         {
-            printf("Client %d's Server Fork got: %s", clientfd, buffer);
-            printf("Send data to client: %d\n", clientfd);
-            write(clientfd, buffer, sizeof(buffer));
+            if (read(fdsMainToFork[i][0], &buffer, sizeof(buffer)) > 0)
+            {
+                printf("Client %d's Server Fork got: %s", clientfd, buffer);
+                printf("Send data to client: %d\n", clientfd);
+                write(clientfd, buffer, sizeof(buffer));
+                // break;
+            }
         }
+
         sleep(INTERVAL);
     }
     return NULL;
@@ -50,9 +71,12 @@ int main()
     int sockfd;
 
     pipe(fdsForkToMain);
-    pipe(fdsMainToFork);
 
-    // memset(&clientfdsForkToMain, 0, sizeof(clientfdsForkToMain));
+    for (i = 0; i < NUM_CLIENTS; i++)
+    {
+        pipe(fdsMainToFork[i]);
+    }
+    // pipe(fdsMainToFork);
 
     // create new socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -124,7 +148,6 @@ int main()
 
                 if (read(clientfd, buffer, sizeof(buffer)) > 0)
                 {
-                    // printf("%s", buffer);
                     write(fdsForkToMain[1], buffer, sizeof(buffer));
                 }
                 sleep(INTERVAL);
