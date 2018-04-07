@@ -64,9 +64,9 @@ int main()
 
     while (1)
     {
+
         if (read(sockfd, buffer, sizeof(buffer)) > 0)
         {
-
             printf("%s", buffer);
         }
         // sleep(INTERVAL);

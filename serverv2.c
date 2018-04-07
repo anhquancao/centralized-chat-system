@@ -100,10 +100,10 @@ int main()
 
     pipe(fdsForkToMain);
 
-    for (i = 0; i < NUM_CLIENTS; i++)
-    {
-        pipe(fdsMainToFork[i]);
-    }
+    // for (i = 0; i < NUM_CLIENTS; i++)
+    // {
+    //     pipe(fdsMainToFork[i]);
+    // }
     // pipe(fdsMainToFork);
 
     // create new socket
@@ -161,6 +161,7 @@ int main()
                 break;
             }
         }
+        pipe(fdsMainToFork[clientId]);
 
         if (fork() == 0)
         {
