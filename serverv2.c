@@ -22,7 +22,7 @@ int i;
 int clientId;
 
 /**
- * Run by server main 
+ * Run by thread of server main 
  * Objective: Receive data from one 
  * server fork and transfer them to other servers fork
  * 
@@ -55,6 +55,10 @@ void *passData()
             case DISCONNECTED_SIGNAL:
                 // Server Fork is shuting down due to client disconnected
                 fdsMainToForkFree[fromClientId] = 0;
+
+                // close the corresponding pipe
+                close(fdsMainToFork[fromClientId][0]);
+                close(fdsMainToFork[fromClientId][1]);
                 printf("Server Main: Client %d disconnected\n", fromClientId);
                 break;
             default:
@@ -68,7 +72,7 @@ void *passData()
 }
 
 /**
- * Run by server fork 
+ * Run by thread of server fork 
  * Objective: Receive data from Server Main,
  * Then send the data to their corresponding client
  */
@@ -78,16 +82,12 @@ void *forkWriteDataToClient()
     while (1)
     {
 
-        // for (i = 0; i < NUM_CLIENTS; i++)
-        // {
         if (read(fdsMainToFork[clientId][0], &buffer, sizeof(buffer)) > 0)
         {
             printf("Server fork: Got: %s", buffer);
             printf("Server fork: Send data to client %d\n", clientId);
             write(clientfd, buffer, sizeof(buffer));
-            // break;
         }
-        // }
 
         sleep(INTERVAL);
     }
@@ -99,12 +99,6 @@ int main()
     int sockfd;
 
     pipe(fdsForkToMain);
-
-    // for (i = 0; i < NUM_CLIENTS; i++)
-    // {
-    //     pipe(fdsMainToFork[i]);
-    // }
-    // pipe(fdsMainToFork);
 
     // create new socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
