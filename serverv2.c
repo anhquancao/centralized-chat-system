@@ -9,12 +9,12 @@
 #include <sys/select.h>
 #include <pthread.h>
 #define INTERVAL 1
-#define NUM_CLIENTS 1
+#define NUM_CLIENTS 10
 
 char buffer[1025];
 int fdsForkToMain[2];
-int fdsMainToFork[2][4];
-// int fdsMainToForkFree[4] = {0};
+int fdsMainToFork[2][NUM_CLIENTS];
+int fdsMainToForkFree[4] = {0};
 int clientfd;
 int i;
 int clientId;
@@ -27,12 +27,19 @@ void *passData()
 {
     while (1)
     {
-        if (read(fdsForkToMain[0], &buffer, sizeof(buffer)) > 0)
+        int fromClientId;
+        if (read(fdsForkToMain[0], &fromClientId, sizeof(int)) > 0)
         {
-            printf("Server Main got: %s", buffer);
+            read(fdsForkToMain[0], &buffer, sizeof(buffer));
+            printf("Server Main: Got data from client %d\n", fromClientId);
+            printf("Server Main: Got: %s", buffer);
             for (i = 0; i < NUM_CLIENTS; i++)
             {
-                write(fdsMainToFork[i][1], buffer, sizeof(buffer));
+                if (fdsMainToForkFree[i] && i != fromClientId)
+                {
+                    printf("Server Main: Send data to server fork %d\n", i);
+                    write(fdsMainToFork[i][1], buffer, sizeof(buffer));
+                }
             }
         }
         sleep(INTERVAL);
@@ -50,16 +57,16 @@ void *forkWriteDataToClient()
     while (1)
     {
 
-        for (i = 0; i < NUM_CLIENTS; i++)
+        // for (i = 0; i < NUM_CLIENTS; i++)
+        // {
+        if (read(fdsMainToFork[clientId][0], &buffer, sizeof(buffer)) > 0)
         {
-            if (read(fdsMainToFork[i][0], &buffer, sizeof(buffer)) > 0)
-            {
-                printf("Client %d's Server Fork got: %s", clientfd, buffer);
-                printf("Send data to client: %d\n", clientfd);
-                write(clientfd, buffer, sizeof(buffer));
-                // break;
-            }
+            printf("Server fork: Got: %s", buffer);
+            printf("Server fork: Send data to client %d\n", clientId);
+            write(clientfd, buffer, sizeof(buffer));
+            // break;
         }
+        // }
 
         sleep(INTERVAL);
     }
@@ -124,13 +131,23 @@ int main()
 
         clientfd = accept(sockfd, (struct sockaddr *)NULL, NULL);
 
+        for (i = 0; i < NUM_CLIENTS; i++)
+        {
+            if (fdsMainToForkFree[i] == 0)
+            {
+                fdsMainToForkFree[i] = 1;
+                clientId = i;
+                break;
+            }
+        }
+
         if (fork() == 0)
         {
 
             fd_set clientSet;
             FD_ZERO(&clientSet);
 
-            printf("Server fork: client %d has connected.\n", clientfd);
+            printf("Server fork: client %d has connected.\n", clientId);
 
             // make it non blocking
             int fl = fcntl(clientfd, F_GETFL, 0);
@@ -148,6 +165,7 @@ int main()
 
                 if (read(clientfd, buffer, sizeof(buffer)) > 0)
                 {
+                    write(fdsForkToMain[1], &clientId, sizeof(int));
                     write(fdsForkToMain[1], buffer, sizeof(buffer));
                 }
                 sleep(INTERVAL);
