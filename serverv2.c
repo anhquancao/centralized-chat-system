@@ -10,17 +10,21 @@
 #include <pthread.h>
 #define INTERVAL 1
 #define NUM_CLIENTS 10
+#define DISCONNECTED_SIGNAL -9999
+#define DATA_SIGNAL -9998
 
 char buffer[1025];
 int fdsForkToMain[2];
 int fdsMainToFork[2][NUM_CLIENTS];
-int fdsMainToForkFree[4] = {0};
+int fdsMainToForkFree[NUM_CLIENTS] = {0};
 int clientfd;
 int i;
 int clientId;
 
 /**
- * Run by server main to transfer data to servers fork
+ * Run by server main 
+ * Objective: Receive data from one 
+ * server fork and transfer them to other servers fork
  * 
  */
 void *passData()
@@ -28,28 +32,45 @@ void *passData()
     while (1)
     {
         int fromClientId;
-        if (read(fdsForkToMain[0], &fromClientId, sizeof(int)) > 0)
+        int signal;
+        if (read(fdsForkToMain[0], &signal, sizeof(int)) > 0)
         {
-            read(fdsForkToMain[0], &buffer, sizeof(buffer));
-            printf("Server Main: Got data from client %d\n", fromClientId);
-            printf("Server Main: Got: %s", buffer);
-            for (i = 0; i < NUM_CLIENTS; i++)
+            read(fdsForkToMain[0], &fromClientId, sizeof(int));
+            switch (signal)
             {
-                if (fdsMainToForkFree[i] && i != fromClientId)
+            case DATA_SIGNAL:
+                // Got data from Server Fork
+                read(fdsForkToMain[0], &buffer, sizeof(buffer));
+                printf("Server Main: Got data from client %d\n", fromClientId);
+                printf("Server Main: Got: %s", buffer);
+                for (i = 0; i < NUM_CLIENTS; i++)
                 {
-                    printf("Server Main: Send data to server fork %d\n", i);
-                    write(fdsMainToFork[i][1], buffer, sizeof(buffer));
+                    if (fdsMainToForkFree[i] && i != fromClientId)
+                    {
+                        printf("Server Main: Send data to server fork %d\n", i);
+                        write(fdsMainToFork[i][1], buffer, sizeof(buffer));
+                    }
                 }
+                break;
+            case DISCONNECTED_SIGNAL:
+                // Server Fork is shuting down due to client disconnected
+                fdsMainToForkFree[fromClientId] = 0;
+                printf("Server Main: Client %d disconnected\n", fromClientId);
+                break;
+            default:
+                printf("Server Main: Wrong Signal Received\n");
             }
         }
+
         sleep(INTERVAL);
     }
     return NULL;
 }
 
 /**
- * Run by server fork to write data to client
- * 
+ * Run by server fork 
+ * Objective: Receive data from Server Main,
+ * Then send the data to their corresponding client
  */
 void *forkWriteDataToClient()
 {
@@ -143,7 +164,7 @@ int main()
 
         if (fork() == 0)
         {
-
+            // child
             fd_set clientSet;
             FD_ZERO(&clientSet);
 
@@ -165,18 +186,25 @@ int main()
 
                 if (read(clientfd, buffer, sizeof(buffer)) > 0)
                 {
+                    // Client send data
+                    int dataSignal = DATA_SIGNAL;
+                    write(fdsForkToMain[1], &dataSignal, sizeof(int));
                     write(fdsForkToMain[1], &clientId, sizeof(int));
                     write(fdsForkToMain[1], buffer, sizeof(buffer));
                 }
+                else
+                {
+                    // Client disconnect
+                    printf("Server Fork: Client %d disconnected\n", clientId);
+                    printf("Server Fork: Send DISCONNECTED_SIGNAL\n");
+                    int disconnectedSignal = DISCONNECTED_SIGNAL;
+                    write(fdsForkToMain[1], &disconnectedSignal, sizeof(int));
+                    write(fdsForkToMain[1], &clientId, sizeof(int));
+                    printf("Server Fork: Exited\n");
+                    exit(0);
+                }
                 sleep(INTERVAL);
             }
-
-            exit(0);
-            // child
-        }
-        else
-        {
-            // parent
         }
     }
 }
