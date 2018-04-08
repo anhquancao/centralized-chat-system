@@ -69,6 +69,5 @@ int main()
         {
             printf("%s", buffer);
         }
-        // sleep(INTERVAL);
     }
 }
